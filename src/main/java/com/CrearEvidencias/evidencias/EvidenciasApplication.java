@@ -14,10 +14,11 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Scanner;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 
 @SpringBootApplication
 public class EvidenciasApplication {
@@ -36,12 +37,14 @@ public class EvidenciasApplication {
 				String nombreCaso = (casos.get(i).nombre != null && !casos.get(i).nombre.isBlank()) ? casos.get(i).nombre : ("caso_" + (i+1));
 				nombreCaso = nombreCaso.replaceAll("[\\\\/:*?\"<>|]", "_");
 				String outputWord = outputDir + nombreCaso + ".docx";
-				String nombreParaSelector = outputWord.substring(outputWord.lastIndexOf("/") + 1, outputWord.lastIndexOf(".docx"));
+				// Obtiene solo el nombre del archivo sin ruta ni extensión, compatible con cualquier separador
+				String nombreArchivo = outputWord.replaceAll("^.*[\\\\/](.*)\\.docx$", "$1");
+				String nombreParaSelector = nombreArchivo;
 				String prerequisitos = casos.get(i).prerequisitos;
 				generarWordDesdePlantilla(wordTemplate, outputWord, casos.get(i).pasos, casos.get(i).resultados, nombreParaSelector, prerequisitos, fechaHoy, iniciativa, proyecto);
 				System.out.println("Generado: " + outputWord);
 			}
-		} catch (IOException e) {
+		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
@@ -224,36 +227,35 @@ public class EvidenciasApplication {
 		String siguienteMarcadorResultado = "{ResultadoEsperado" + (resultados.size() + 1) + "}";
 		List<IBodyElement> bodyElements = doc.getBodyElements();
 		int startRemoveIndex = -1;
+		boolean existeMarcadorSiguiente = false;
 		for (int i = 0; i < bodyElements.size(); i++) {
 			IBodyElement elem = bodyElements.get(i);
 			if (elem instanceof XWPFTable) {
 				XWPFTable table = (XWPFTable) elem;
-				boolean found = false;
 				outer:
 				for (var row : table.getRows()) {
 					for (var cell : row.getTableCells()) {
 						for (XWPFParagraph p : cell.getParagraphs()) {
 							String text = p.getText();
 							if ((text != null && text.contains(siguienteMarcadorPaso)) || (text != null && text.contains(siguienteMarcadorResultado))) {
-								found = true;
+								startRemoveIndex = i;
+								existeMarcadorSiguiente = true;
 								break outer;
 							}
 						}
 					}
 				}
-				if (found) {
-					startRemoveIndex = i;
-					break;
-				}
 			} else if (elem instanceof XWPFParagraph) {
 				String text = ((XWPFParagraph) elem).getText();
 				if ((text != null && text.contains(siguienteMarcadorPaso)) || (text != null && text.contains(siguienteMarcadorResultado))) {
 					startRemoveIndex = i;
+					existeMarcadorSiguiente = true;
 					break;
 				}
 			}
 		}
-		if (startRemoveIndex != -1) {
+		// Solo elimina si realmente existe un marcador siguiente
+		if (existeMarcadorSiguiente && startRemoveIndex != -1) {
 			for (int i = bodyElements.size() - 1; i >= startRemoveIndex; i--) {
 				IBodyElement elem = bodyElements.get(i);
 				if (elem instanceof XWPFParagraph) {
